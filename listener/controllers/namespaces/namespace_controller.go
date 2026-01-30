@@ -20,7 +20,10 @@ import (
 	"context"
 	"fmt"
 
+<<<<<<< HEAD
 	"github.com/platform-mesh/kubernetes-graphql-gateway/apis/v1alpha1"
+=======
+>>>>>>> 3731b8c (remove usage of paths)
 	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/controllers/reconciler"
 	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/apischema"
 	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/workspacefile"
