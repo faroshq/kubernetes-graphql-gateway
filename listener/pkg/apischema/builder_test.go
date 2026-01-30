@@ -144,7 +144,7 @@ func TestWithApiResourceCategories(t *testing.T) {
 				tc.key: {VendorExtensible: spec.VendorExtensible{Extensions: map[string]any{}}},
 			})
 			b.WithApiResourceCategories(tc.list)
-			ext, found := b.GetSchemas()[tc.key].Extensions[apis.CategoriesExtensionKey]
+			ext, found := b.GetSchemas()[tc.key].Extensions[apis.ScopeExtensionKey]
 			if tc.wantCats == nil {
 				assert.False(t, found, "expected no categories")
 				return
