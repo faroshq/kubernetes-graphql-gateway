@@ -76,12 +76,6 @@ func (w *FileWatcher) watchImmediate(ctx context.Context) error {
 	}
 }
 
-// isTargetFileEvent checks if the event is for our target file
-func (w *FileWatcher) isTargetFileEvent(event fsnotify.Event, targetFile string) bool {
-	return filepath.Clean(event.Name) == filepath.Clean(targetFile) &&
-		event.Op&(fsnotify.Write|fsnotify.Create) != 0
-}
-
 // handleEvent processes file system events for directory watching
 func (w *FileWatcher) handleEvent(ctx context.Context, event fsnotify.Event) {
 	logger := log.FromContext(ctx)
