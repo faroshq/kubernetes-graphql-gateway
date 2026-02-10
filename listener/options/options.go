@@ -44,6 +44,8 @@ type ExtraOptions struct {
 	SchemaHandler string
 	// GRPCListenAddr is the gRPC server listener address (only used if SchemaHandler is "grpc")
 	GRPCListenAddr string
+
+	AdditonalPathAnnotationKey string
 }
 
 type completedOptions struct {
@@ -105,6 +107,8 @@ func (options *Options) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&options.GRPCListenAddr, "grpc-listen-addr", options.GRPCListenAddr, "The gRPC server listener address (only used if SchemaHandler is 'grpc')")
 
 	fs.StringVar(&options.AnchorNamespace, "anchor-namespace", options.AnchorNamespace, "Namespace to watch as anchor for kubernetes provider (default: kube-system)")
+
+	fs.StringVar(&options.AdditonalPathAnnotationKey, "additional-path-annotation-key", options.AdditonalPathAnnotationKey, "additional path annotation key for workspace schema generation")
 
 	fs.BoolVar(&options.EnableHTTP2, "enable-http2", options.EnableHTTP2, "Enable HTTP/2 for controller-manager server")
 	fs.StringVar(&options.MetricsBindAddress, "metrics-bind-address", options.MetricsBindAddress, "The address the metric endpoint binds to.")

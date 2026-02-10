@@ -1,0 +1,13 @@
+exclude:
+  paths:
+    - main.go
+    - sdk
+    - cmd
+    - apis/v1alpha1/zz_generated.deepcopy.go
+    - listener/server.go
+    - listener/config.go
+    - listener/options
+    - gateway/server.go
+    - gateway/config.go
+    - gateway/options
+    - gateway/utils/context

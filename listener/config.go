@@ -8,7 +8,6 @@ import (
 	"github.com/platform-mesh/golang-commons/logger"
 	gatewayv1alpha1 "github.com/platform-mesh/kubernetes-graphql-gateway/apis/v1alpha1"
 	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/options"
-	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/apischema"
 	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/schemahandler"
 	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/workspacefile"
 	kcpprovider "github.com/platform-mesh/kubernetes-graphql-gateway/providers/kcp"
@@ -50,8 +49,7 @@ type Config struct {
 
 	ReconcilerGVK schema.GroupVersionKind
 
-	SchemaHandler  schemahandler.Handler
-	SchemaResolver apischema.Resolver
+	SchemaHandler schemahandler.Handler
 
 	// ResourceReconcilerClusterMetadataFunc allows to provide cluster metadata for a given cluster name
 	// when reconciling anchor namespaces.
@@ -179,14 +177,6 @@ func NewConfig(options *options.CompletedOptions) (*Config, error) {
 		}()
 
 	}
-
-	// Initialize schema resolver
-	// TODO: Move to context based logger.
-	log, err := logger.New(logger.DefaultConfig())
-	if err != nil {
-		return nil, fmt.Errorf("error creating logger: %w", err)
-	}
-	config.SchemaResolver = apischema.NewResolver(log)
 
 	return config, nil
 }
