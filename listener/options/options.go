@@ -46,6 +46,10 @@ type ExtraOptions struct {
 	GRPCListenAddr string
 
 	AdditonalPathAnnotationKey string
+
+	// EnableClusterAccessController enables the ClusterAccess controller
+	// which watches ClusterAccess CRD resources and generates schemas for remote clusters
+	EnableClusterAccessController bool
 }
 
 type completedOptions struct {
@@ -114,6 +118,7 @@ func (options *Options) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&options.MetricsBindAddress, "metrics-bind-address", options.MetricsBindAddress, "The address the metric endpoint binds to.")
 	fs.BoolVar(&options.MetricsSecureServe, "metrics-secure-serve", options.MetricsSecureServe, "Serve metrics over HTTPS.")
 
+	fs.BoolVar(&options.EnableClusterAccessController, "enable-clusteraccess-controller", options.EnableClusterAccessController, "Enable the ClusterAccess controller for managing remote cluster schemas")
 }
 
 func (options *Options) Complete() (*CompletedOptions, error) {
