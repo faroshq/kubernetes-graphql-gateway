@@ -54,6 +54,17 @@ type Config struct {
 	// ResourceReconcilerClusterMetadataFunc allows to provide cluster metadata for a given cluster name
 	// when reconciling anchor namespaces.
 	ResourceReconcilerClusterMetadataFunc func(clusterName string) (*gatewayv1alpha1.ClusterMetadata, error)
+
+	// grpcServer holds a reference to the gRPC server so it can be gracefully stopped.
+	grpcServer *grpc.Server
+}
+
+// GracefulStop gracefully stops the gRPC server, if one was started.
+func (c *Config) GracefulStop() {
+	if c.grpcServer != nil {
+		log.Info().Msg("Gracefully stopping gRPC server")
+		c.grpcServer.GracefulStop()
+	}
 }
 
 func NewConfig(options *options.CompletedOptions) (*Config, error) {
@@ -167,13 +178,12 @@ func NewConfig(options *options.CompletedOptions) (*Config, error) {
 		reflection.Register(srv)
 
 		config.SchemaHandler = handler
+		config.grpcServer = srv
 
 		go func() {
 			if err := srv.Serve(lis); err != nil {
 				log.Error().Err(err).Msg("error serving gRPC")
 			}
-
-			// TODO: Add graceful shutdown
 		}()
 
 	}
