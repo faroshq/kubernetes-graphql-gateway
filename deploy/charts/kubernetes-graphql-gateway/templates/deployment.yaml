@@ -43,7 +43,7 @@ spec:
         {{- if .Values.listener.kubeconfigSecret }}
         - name: listener-kubeconfig
           secret:
-            secretName: {{ .Values.listener.kubeconfigSecret }}
+            secretName: {{ tpl .Values.listener.kubeconfigSecret . }}
         {{- end }}
       {{- end }}
       containers:
