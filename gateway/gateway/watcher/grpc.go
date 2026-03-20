@@ -57,6 +57,8 @@ func (w *GRPCWatcher) Close() error {
 
 // Run starts the gRPC watcher and blocks until the context is cancelled.
 // It subscribes to schema updates from the listener and processes them.
+// Subscribe is retried with backoff so the gateway handles the case where
+// the listener gRPC server is not yet ready when the gateway starts.
 func (w *GRPCWatcher) Run(ctx context.Context) error {
 	logger := log.FromContext(ctx)
 	defer func() {
@@ -65,7 +67,11 @@ func (w *GRPCWatcher) Run(ctx context.Context) error {
 		}
 	}()
 
-	stream, err := w.client.Subscribe(ctx, &sdk.SubscribeRequest{})
+	// Retry Subscribe with backoff to tolerate the listener starting after the gateway.
+	// grpc.WaitForReady causes the RPC to block until the connection is READY,
+	// which handles the common startup ordering issue where the gateway pod
+	// starts before the listener's gRPC server has bound port 50051.
+	stream, err := w.client.Subscribe(ctx, &sdk.SubscribeRequest{}, grpc.WaitForReady(true))
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to schema updates: %w", err)
 	}
