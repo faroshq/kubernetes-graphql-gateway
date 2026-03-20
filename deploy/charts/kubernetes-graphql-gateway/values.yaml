@@ -26,7 +26,7 @@ listener:
   # Multicluster provider: "kubernetes" (default) or "kcp"
   provider: kubernetes
   # Kubernetes resource to watch as anchor (default namespace name)
-  anchorResource: default
+  anchorResource: "object.metadata.name == 'default'"
   # GroupVersionResource for the reconciler
   reconcilerGVR: "namespaces.v1"
   # gRPC listen address (only used when schemaHandler=grpc)
