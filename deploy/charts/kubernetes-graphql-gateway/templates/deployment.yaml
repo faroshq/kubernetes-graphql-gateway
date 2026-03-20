@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kubernetes-graphql-gateway.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernetes-graphql-gateway.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "kubernetes-graphql-gateway.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kubernetes-graphql-gateway.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "kubernetes-graphql-gateway.serviceAccountName" . }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: schemas
+          {{- if .Values.schemas.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.schemas.existingClaim }}
+          {{- else }}
+          emptyDir:
+            sizeLimit: {{ .Values.schemas.sizeLimit }}
+          {{- end }}
+      containers:
+        - name: listener
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/app/listener"]
+          args:
+            - "--schemas-dir=/schemas"
+            - "--multicluster-runtime-provider={{ .Values.listener.provider }}"
+            - "--anchor-namespace={{ .Values.listener.anchorNamespace }}"
+            - "--metrics-bind-address=0"
+            {{- range .Values.listener.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: schemas
+              mountPath: /schemas
+          {{- with .Values.listener.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        - name: gateway
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/app/gateway"]
+          args:
+            - "--schemas-dir=/schemas"
+            - "--gateway-port={{ .Values.gateway.port }}"
+            - "--enable-playground={{ .Values.gateway.playground }}"
+            - "--url-suffix={{ .Values.gateway.urlSuffix }}"
+            {{- range .Values.gateway.corsAllowedOrigins }}
+            - "--cors-allowed-origins={{ . }}"
+            {{- end }}
+            {{- range .Values.gateway.corsAllowedHeaders }}
+            - "--cors-allowed-headers={{ . }}"
+            {{- end }}
+            {{- range .Values.gateway.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
+          ports:
+            - name: graphql
+              containerPort: {{ .Values.gateway.port }}
+              protocol: TCP
+          volumeMounts:
+            - name: schemas
+              mountPath: /schemas
+          {{- with .Values.gateway.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

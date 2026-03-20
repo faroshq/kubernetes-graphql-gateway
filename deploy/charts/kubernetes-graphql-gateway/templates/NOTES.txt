@@ -1,0 +1,13 @@
+Kubernetes GraphQL Gateway has been deployed!
+
+The GraphQL endpoint is available at:
+  Service: {{ include "kubernetes-graphql-gateway.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}{{ .Values.gateway.urlSuffix }}
+
+{{- if .Values.gateway.playground }}
+GraphQL Playground is enabled at the same URL.
+{{- end }}
+
+To port-forward for local access:
+  kubectl port-forward svc/{{ include "kubernetes-graphql-gateway.fullname" . }} 8080:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+
+Then open: http://localhost:8080{{ .Values.gateway.urlSuffix }}
