@@ -20,10 +20,11 @@ import (
 	"context"
 	"fmt"
 
-	apisv1alpha2 "github.com/kcp-dev/sdk/apis/apis/v1alpha2"
+	"github.com/platform-mesh/kubernetes-graphql-gateway/apis/v1alpha1"
 	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/controllers/reconciler"
 	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/apischema"
 	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/workspacefile"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -31,11 +32,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+
 	mcbuilder "sigs.k8s.io/multicluster-runtime/pkg/builder"
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
-
-	"github.com/platform-mesh/kubernetes-graphql-gateway/apis/v1alpha1"
 )
 
 const (
@@ -89,22 +89,11 @@ func (r *NamespaceReconciler) Reconcile(ctx context.Context, req mcreconcile.Req
 	config := cl.GetConfig()
 
 	// If we are running in k8s mode, the cluster name might be empty.
-	paths := []string{}
+	var paths []string
 	if req.ClusterName == "" {
 		paths = []string{"default"}
 	} else {
-		var apibindings apisv1alpha2.APIBindingList
-		if err := c.List(ctx, &apibindings); err != nil {
-			logger.Error(err, "Failed to list APIBindings")
-			return ctrl.Result{}, fmt.Errorf("failed to list APIBindings: %w", err)
-		}
-
-		// There should be always just one APIBinding per workspace, but we loop for safety.
-		for _, ab := range apibindings.Items {
-			if ab.Annotations["kcp.io/path"] != "" {
-				paths = append(paths, ab.Annotations["kcp.io/path"])
-			}
-		}
+		paths = []string{req.ClusterName}
 	}
 
 	// Check if the anchor namespace exists

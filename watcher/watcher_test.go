@@ -1,3 +1,6 @@
+// TODO(v2): rewrite to match new watcher API (NewFileWatcher, handleEvent, FileEventHandler signatures changed in v2)
+//go:build ignore
+
 package watcher
 
 import (

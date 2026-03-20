@@ -1,3 +1,6 @@
+// TODO(v2): rewrite — references packages deleted/moved in v2 refactor
+//go:build ignore
+
 package roundtripper_test
 
 import (

@@ -214,3 +214,11 @@ func extractAuthFromKubeconfig(config *rest.Config, authInfo *api.AuthInfo) erro
 	// No recognizable authentication found
 	return errors.New("no valid authentication method found in kubeconfig")
 }
+
+// ClusterURLResolver is a function that resolves the cluster URL for a given cluster name.
+type ClusterURLResolver func(currentURL, clusterName string) (string, error)
+
+// DefaultClusterURLResolverFunc is the default implementation that returns the URL unchanged.
+func DefaultClusterURLResolverFunc(url, clusterName string) (string, error) {
+	return url, nil
+}

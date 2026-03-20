@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/controllers/namespaces"
+
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 

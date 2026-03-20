@@ -3,13 +3,13 @@ package options
 import (
 	"fmt"
 
+	"github.com/platform-mesh/kubernetes-graphql-gateway/apis/v1alpha1"
+	providerkcp "github.com/platform-mesh/kubernetes-graphql-gateway/providers/kcp/options"
 	"github.com/spf13/pflag"
+
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/component-base/logs"
 	logsv1 "k8s.io/component-base/logs/api/v1"
-
-	"github.com/platform-mesh/kubernetes-graphql-gateway/apis/v1alpha1"
-	providerkcp "github.com/platform-mesh/kubernetes-graphql-gateway/providers/kcp/options"
 )
 
 type Options struct {
@@ -113,8 +113,8 @@ func (options *Options) Complete() (*CompletedOptions, error) {
 		if err != nil {
 			return nil, err
 		}
-		co.completedOptions.ProviderKcp = opts
-		co.completedOptions.ClusterMetadataFunc = opts.GetClusterMetadataOverrideFunc()
+		co.ProviderKcp = opts
+		co.ClusterMetadataFunc = opts.GetClusterMetadataOverrideFunc()
 	}
 	return co, nil
 }

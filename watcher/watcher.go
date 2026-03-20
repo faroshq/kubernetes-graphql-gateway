@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
