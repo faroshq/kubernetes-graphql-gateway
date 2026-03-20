@@ -41,7 +41,7 @@ tasks:
     desc: "Generate all CRD-related files (manifests + deepcopy methods)"
     deps: [setup:controller-gen, setup:kcp-apigen ]
     cmds:
-      - "{{.LOCAL_BIN}}/controller-gen object crd:crdVersions=v1 paths=./common/apis/v1alpha1 output:crd:artifacts:config=config/crd"
+      - "{{.LOCAL_BIN}}/controller-gen object crd:crdVersions=v1 paths=./apis/v1alpha1 output:crd:artifacts:config=config/crd"
       - "{{.LOCAL_BIN}}/apigen --output-dir config/kcp --input-dir config/crd"
 
   ## Development
@@ -126,6 +126,10 @@ tasks:
       - task: lint
       - task: test
 
+  proto:
+    desc: "Generate protobuf files"
+    cmds:
+      - protoc --go_out=. --go-grpc_out=. --go_opt=module=github.com/platform-mesh/kubernetes-graphql-gateway --go-grpc_opt=module=github.com/platform-mesh/kubernetes-graphql-gateway ./apis/proto/schemahandler.proto
 
   gateway:
     desc: "Start the GraphQL gateway server (kills existing process on port 8080 if needed)"
@@ -143,25 +147,9 @@ tasks:
   listener:
     desc: "Start the listener server (kills existing process on port 8090 if needed)"
     cmds:
-      - |
-        # Check if port 8090 is in use and kill the process if found
-        PID=$(lsof -ti:8090 2>/dev/null || echo "")
-        if [ ! -z "$PID" ]; then
-          echo "Found existing process $PID on port 8090, killing it..."
-          kill $PID 2>/dev/null || true
-          sleep 2
-        fi
       - go run ./cmd/listener/listener.go 
 
   listener-kcp:
     desc: "Start the listener server (kills existing process on port 8090 if needed)"
     cmds:
-      - |
-        # Check if port 8090 is in use and kill the process if found
-        PID=$(lsof -ti:8090 2>/dev/null || echo "")
-        if [ ! -z "$PID" ]; then
-          echo "Found existing process $PID on port 8090, killing it..."
-          kill $PID 2>/dev/null || true
-          sleep 2
-        fi
-      - go run ./cmd/listener/listener.go --apiexport-endpoint-slice-name gateway.platform-mesh.io --multicluster-runtime-provider kcp --workspace-schema-host-override localhost:8090 
+      - go run ./cmd/listener/listener.go --apiexport-endpoint-slice-name gateway.platform-mesh.io --multicluster-runtime-provider kcp --kubeconfig=.secret/cc-d2-kcp.yaml

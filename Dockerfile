@@ -3,12 +3,11 @@ ARG TARGETARCH
 
 WORKDIR /app
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -ldflags '-w -s' main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -ldflags '-w -s' -o /out/listener ./cmd/listener
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -ldflags '-w -s' -o /out/gateway ./cmd/gateway
 
-
-FROM scratch
+FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
-COPY --from=builder  /app/main .
-USER 1001:1001
-ENTRYPOINT ["./main"]
-CMD ["listener"]
+COPY --from=builder /out/listener /out/gateway ./
+USER nonroot:nonroot
+ENTRYPOINT ["/app/listener"]

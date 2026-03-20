@@ -5,88 +5,97 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/pkg/errors"
+	"github.com/platform-mesh/kubernetes-graphql-gateway/gateway/gateway/config"
 	"github.com/platform-mesh/kubernetes-graphql-gateway/gateway/gateway/registry"
 	"github.com/platform-mesh/kubernetes-graphql-gateway/gateway/gateway/watcher"
+	utilscontext "github.com/platform-mesh/kubernetes-graphql-gateway/gateway/utils/context"
+
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// Service orchestrates the domain-driven architecture with target clusters
+// Service orchestrates the gateway with target clusters.
 type Service struct {
-	clusterRegistry *registry.ClusterRegistry
-	// TODO: This should be generalized to multiple watchers
-	schemaWatcher *watcher.FileWatcher
-
-	config *GatewayConfig
-
-	started bool
+	registry *registry.Registry
+	config   config.Gateway
+	started  bool
 }
 
-type GatewayConfig struct {
-	DevelopmentDisableAuth bool
-
-	GraphQLPretty            bool
-	GraphQLPlayground        bool
-	GraphQLGraphiQL          bool
-	ServerCORSAllowedOrigins []string
-	ServerCORSAllowedHeaders []string
-
-	SchemaDirectory string
+// New creates a new Gateway service.
+func New(cfg config.Gateway) (*Service, error) {
+	return &Service{
+		registry: registry.New(cfg),
+		config:   cfg,
+	}, nil
 }
 
-// New creates a new domain-driven Gateway instance
-func New(config GatewayConfig) (*Service, error) {
-	clusterRegistry := registry.New(registry.ClusterRegistryConfig{
-		SchemaDirectory:        config.SchemaDirectory,
-		DevelopmentDisableAuth: config.DevelopmentDisableAuth,
-		GraphQLPretty:          config.GraphQLPretty,
-		GraphQLPlayground:      config.GraphQLPlayground,
-		GraphQLGraphiQL:        config.GraphQLGraphiQL,
-		ServerCORSConfig: registry.CORSConfig{
-			AllowedOrigins: config.ServerCORSAllowedOrigins,
-			AllowedHeaders: config.ServerCORSAllowedHeaders,
-		},
-	})
+// Run starts the gateway service with the configured watcher.
+func (s *Service) Run(ctx context.Context) error {
+	logger := log.FromContext(ctx)
+	s.started = true
 
-	// Cluster registry acts as main server and is fed into watcher. So watcher updated new clusters there.
-	schemaWatcher, err := watcher.NewFileWatcher(clusterRegistry)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create schema watcher")
+	switch s.config.SchemaHandler {
+	case "file":
+		logger.Info("Starting file watcher", "directory", s.config.SchemaDirectory)
+		fw, err := watcher.NewFileWatcher(s.registry)
+		if err != nil {
+			return fmt.Errorf("failed to create file watcher: %w", err)
+		}
+		return fw.Run(ctx, s.config.SchemaDirectory)
+
+	case "grpc":
+		logger.Info("Starting gRPC watcher", "address", s.config.GRPCAddress)
+		gw, err := watcher.NewGRPCWatcher(
+			watcher.GRPCWatcherConfig{Address: s.config.GRPCAddress},
+			s.registry,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create gRPC watcher: %w", err)
+		}
+		return gw.Run(ctx)
+
+	default:
+		return fmt.Errorf("unknown schema handler: %s", s.config.SchemaHandler)
 	}
-
-	gateway := &Service{
-		clusterRegistry: clusterRegistry,
-		schemaWatcher:   schemaWatcher,
-		config:          &config,
-	}
-
-	return gateway, nil
 }
 
-// Run starts the gateway service
-func (g *Service) Run(ctx context.Context) error {
-	// Initialize schema watcher with context
-	if err := g.schemaWatcher.Initialize(ctx, g.config.SchemaDirectory); err != nil {
-		return fmt.Errorf("failed to initialize schema watcher: %w", err)
-	}
-	g.started = true
-	<-ctx.Done()
-	return nil
-}
+// ServeHTTP routes HTTP requests to the appropriate endpoint.
+func (s *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	logger := log.FromContext(r.Context())
 
-// ServeHTTP delegates HTTP requests to the cluster registry
-func (g *Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if !g.started {
+	if !s.started {
 		http.Error(w, "Gateway not started", http.StatusServiceUnavailable)
 		return
 	}
-	// Delegate to cluster registry
-	g.clusterRegistry.ServeHTTP(w, r)
+
+	// Extract cluster name from context (set by HTTP mux from path parameter)
+	clusterName, ok := utilscontext.GetClusterFromCtx(r.Context())
+	if !ok || clusterName == "" {
+		logger.Error(fmt.Errorf("cluster name not found in context"), "Missing cluster name", "path", r.URL.Path)
+		http.Error(w, "Cluster name is required in path: /api/clusters/{clusterName}", http.StatusBadRequest)
+		return
+	}
+
+	// Get endpoint for cluster
+	endpoint, exists := s.registry.GetEndpoint(clusterName)
+	if !exists {
+		logger.Error(fmt.Errorf("endpoint not found"), "Target endpoint not found",
+			"cluster", clusterName,
+			"path", r.URL.Path,
+		)
+		http.NotFound(w, r)
+		return
+	}
+
+	logger.V(4).Info("Routing request to endpoint",
+		"cluster", clusterName,
+		"method", r.Method,
+		"path", r.URL.Path,
+	)
+
+	endpoint.ServeHTTP(w, r)
 }
 
-// Shutdown gracefully shuts down the gateway and all its services
-func (g *Service) Shutdown(ctx context.Context) error {
-	if g.clusterRegistry != nil {
-		return g.clusterRegistry.Close(ctx)
-	}
-	return nil
+// Registry returns the endpoint registry for direct access if needed.
+func (s *Service) Registry() *registry.Registry {
+	return s.registry
 }

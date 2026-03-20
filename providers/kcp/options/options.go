@@ -1,24 +1,10 @@
-/*
-Copyright 2025 The Kube Bind Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package options
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"path"
 	"strings"
 
 	"github.com/platform-mesh/kubernetes-graphql-gateway/apis/v1alpha1"
@@ -40,8 +26,8 @@ type ExtraOptions struct {
 	// workspaceSchemaKubeconfigOverride is the kubeconfig override for workspace schema generation.
 	// If set together with WorkspaceSchemaHostOverride, WorkspaceSchemaHostOverride will take precedence.
 	workspaceSchemaKubeconfigOverride string
-	// WorkspaceScehmaKubeconfigRestConfig is the rest config built from workspaceSchemaKubeconfigOverride
-	WorkspaceScehmaKubeconfigRestConfig *rest.Config
+	// WorkspaceSchemaKubeconfigRestConfig is the rest config built from workspaceSchemaKubeconfigOverride
+	WorkspaceSchemaKubeconfigRestConfig *rest.Config
 }
 
 type completedOptions struct {
@@ -74,7 +60,7 @@ func (options *Options) Complete() (*CompletedOptions, error) {
 			return nil, fmt.Errorf("failed to build rest config from kubeconfig: %w", err)
 		}
 
-		options.WorkspaceScehmaKubeconfigRestConfig = config
+		options.WorkspaceSchemaKubeconfigRestConfig = config
 	}
 
 	return &CompletedOptions{
@@ -100,14 +86,25 @@ func (options *CompletedOptions) Validate() error {
 
 func (options *CompletedOptions) GetClusterMetadataOverrideFunc() v1alpha1.ClusterMetadataFunc {
 	return func(clusterName string) (*v1alpha1.ClusterMetadata, error) {
+		if options.WorkspaceSchemaKubeconfigRestConfig != nil {
+			metadata, err := v1alpha1.BuildClusterMetadataFromConfig(options.WorkspaceSchemaKubeconfigRestConfig)
+			if err != nil {
+				return nil, fmt.Errorf("failed to build metadata from rest config: %w", err)
+			}
+
+			parsed, err := url.Parse(options.WorkspaceSchemaKubeconfigRestConfig.Host)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse host from rest config: %w", err)
+			}
+			parsed.Path = path.Join("clusters", clusterName)
+			metadata.Host = parsed.String()
+
+			return metadata, nil
+		}
+
 		metadata := &v1alpha1.ClusterMetadata{}
 		if options.WorkspaceSchemaHostOverride != "" {
 			metadata.Host = options.WorkspaceSchemaHostOverride
-		}
-		if options.WorkspaceScehmaKubeconfigRestConfig != nil {
-			// TODO: Convert rest.Config to ClusterMetadata
-			// For now, we just return an error
-			return nil, fmt.Errorf("conversion from rest.Config to ClusterMetadata not implemented")
 		}
 		return metadata, nil
 	}
@@ -115,9 +112,9 @@ func (options *CompletedOptions) GetClusterMetadataOverrideFunc() v1alpha1.Clust
 
 func (options *CompletedOptions) GetClusterURLResolverFunc() v1alpha1.ClusterURLResolver {
 	return func(currentURL string, clusterName string) (string, error) {
-		//if options.WorkspaceSchemaHostOverride != "" {
-		//	return options.WorkspaceSchemaHostOverride, nil
-		//}
+		if options.WorkspaceSchemaHostOverride != "" {
+			return options.WorkspaceSchemaHostOverride, nil
+		}
 		parts := strings.Split(currentURL, "/services/")
 		if len(parts) != 2 {
 			return "", fmt.Errorf("invalid current URL format: %s", currentURL)

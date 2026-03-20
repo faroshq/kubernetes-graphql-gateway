@@ -5,11 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 
 	"github.com/platform-mesh/kubernetes-graphql-gateway/apis/v1alpha1"
-	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/apischema"
-	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/workspacefile"
+	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/schemahandler"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/client-go/discovery"
@@ -24,14 +22,12 @@ var (
 )
 
 type Reconciler struct {
-	ioHandler      *workspacefile.FileHandler
-	schemaResolver apischema.Resolver
+	schemaHandler schemahandler.Handler
 }
 
-func NewReconciler(ioHandler *workspacefile.FileHandler, schemaResolver apischema.Resolver) *Reconciler {
+func NewReconciler(ioHandler schemahandler.Handler) *Reconciler {
 	return &Reconciler{
-		ioHandler:      ioHandler,
-		schemaResolver: schemaResolver,
+		schemaHandler: ioHandler,
 	}
 }
 
@@ -49,7 +45,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, schemaPaths []string, cfg *r
 		return fmt.Errorf("failed to create discovery client: %w", err)
 	}
 
-	// Create REST mapper for the host cluster
+	// Create REST mapper for the host clusters
 	restMapper, err := r.restMapperFromConfig(cfg)
 	if err != nil {
 		logger.Error(err, "Failed to create REST mapper")
@@ -65,22 +61,22 @@ func (r *Reconciler) Reconcile(ctx context.Context, schemaPaths []string, cfg *r
 			RESTMapper:      restMapper,
 		}
 
-		currentSchema, err := generateSchemaWithMetadata(ctx, params, r.schemaResolver, metadata)
+		currentSchema, err := generateSchemaWithMetadata(ctx, params, metadata)
 		if err != nil {
 			logger.Error(err, "Failed to generate schema with metadata")
 			return fmt.Errorf("failed to generate schema with metadata: %w", err)
 		}
 
 		// Read existing schema (if it exists)
-		savedSchema, err := r.ioHandler.Read(schemaPath)
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		savedSchema, err := r.schemaHandler.Read(ctx, schemaPath)
+		if err != nil && !errors.Is(err, schemahandler.ErrNotExist) {
 			logger.Error(err, "Failed to read existing schema file")
 			return fmt.Errorf("failed to read existing schema: %w", err)
 		}
 
 		// Write if file doesn't exist or content has changed
-		if errors.Is(err, fs.ErrNotExist) || !bytes.Equal(currentSchema, savedSchema) {
-			if err := r.ioHandler.Write(currentSchema, schemaPath); err != nil {
+		if errors.Is(err, schemahandler.ErrNotExist) || !bytes.Equal(currentSchema, savedSchema) {
+			if err := r.schemaHandler.Write(ctx, currentSchema, schemaPath); err != nil {
 				logger.Error(err, "Failed to write schema", "path", schemaPath)
 				return fmt.Errorf("failed to write schema: %w", err)
 			}
@@ -93,10 +89,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, schemaPaths []string, cfg *r
 	return nil
 }
 
-func (r *Reconciler) Cleanup(schemaPaths []string) error {
+func (r *Reconciler) Cleanup(ctx context.Context, schemaPaths []string) error {
 	for _, schemaPath := range schemaPaths {
-		err := r.ioHandler.Delete(schemaPath)
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		err := r.schemaHandler.Delete(ctx, schemaPath)
+		if err != nil && !errors.Is(err, schemahandler.ErrNotExist) {
 			return fmt.Errorf("failed to delete schema for path %q: %w", schemaPath, err)
 		}
 	}

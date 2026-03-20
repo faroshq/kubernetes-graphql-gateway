@@ -3,17 +3,20 @@ package listener
 import (
 	"crypto/tls"
 	"fmt"
+	"net"
 
-	"github.com/platform-mesh/golang-commons/logger"
 	gatewayv1alpha1 "github.com/platform-mesh/kubernetes-graphql-gateway/apis/v1alpha1"
 	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/options"
-	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/apischema"
-	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/workspacefile"
+	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/schemahandler"
 	kcpprovider "github.com/platform-mesh/kubernetes-graphql-gateway/providers/kcp"
+	"github.com/platform-mesh/kubernetes-graphql-gateway/sdk"
 	"github.com/rs/zerolog/log"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -43,12 +46,24 @@ type Config struct {
 
 	ClientConfig *rest.Config
 
-	IOHandler      *workspacefile.FileHandler
-	SchemaResolver apischema.Resolver
+	ReconcilerGVK schema.GroupVersionKind
 
-	// NamespaceReconcilerClusterMetadataFunc allows to provide cluster metadata for a given cluster name
+	SchemaHandler schemahandler.Handler
+
+	// ResourceReconcilerClusterMetadataFunc allows to provide cluster metadata for a given cluster name
 	// when reconciling anchor namespaces.
-	NamespaceReconcilerClusterMetadataFunc func(clusterName string) (*gatewayv1alpha1.ClusterMetadata, error)
+	ResourceReconcilerClusterMetadataFunc func(clusterName string) (*gatewayv1alpha1.ClusterMetadata, error)
+
+	// grpcServer holds a reference to the gRPC server so it can be gracefully stopped.
+	grpcServer *grpc.Server
+}
+
+// GracefulStop gracefully stops the gRPC server, if one was started.
+func (c *Config) GracefulStop() {
+	if c.grpcServer != nil {
+		log.Info().Msg("Gracefully stopping gRPC server")
+		c.grpcServer.GracefulStop()
+	}
 }
 
 func NewConfig(options *options.CompletedOptions) (*Config, error) {
@@ -58,13 +73,15 @@ func NewConfig(options *options.CompletedOptions) (*Config, error) {
 
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	rules.ExplicitPath = options.KubeConfig
+
 	var err error
 	config.ClientConfig, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, nil).ClientConfig()
 	if err != nil {
 		return nil, err
 	}
+
 	config.ClientConfig = rest.CopyConfig(config.ClientConfig)
-	config.ClientConfig = rest.AddUserAgent(config.ClientConfig, "kube-bind-backend")
+	config.ClientConfig = rest.AddUserAgent(config.ClientConfig, "kubernetes-graphql-gateway-listener")
 
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
@@ -105,17 +122,17 @@ func NewConfig(options *options.CompletedOptions) (*Config, error) {
 		}
 
 		config.Provider = provider
-		config.NamespaceReconcilerClusterMetadataFunc = options.ProviderKcp.GetClusterMetadataOverrideFunc()
+		config.ResourceReconcilerClusterMetadataFunc = options.ProviderKcp.GetClusterMetadataOverrideFunc()
 	default:
 		config.Provider = nil
 	}
 
-	disableHTTP2 := func(c *tls.Config) {
-		log.Info().Msg("disabling http/2")
-		c.NextProtos = []string{"http/1.1"}
-	}
 	var tlsOpts []func(*tls.Config)
 	if !options.EnableHTTP2 {
+		disableHTTP2 := func(c *tls.Config) {
+			log.Info().Msg("disabling http/2")
+			c.NextProtos = []string{"http/1.1"}
+		}
 		tlsOpts = []func(c *tls.Config){disableHTTP2}
 	}
 
@@ -140,20 +157,35 @@ func NewConfig(options *options.CompletedOptions) (*Config, error) {
 
 	config.Manager = manager
 
-	// Initialize FileHandler for schema storage
-	ioHandler, err := workspacefile.NewIOHandler(options.SchemasDir)
-	if err != nil {
-		return nil, fmt.Errorf("error creating IO handler: %w", err)
-	}
-	config.IOHandler = ioHandler
+	switch options.SchemaHandler {
+	case "file":
+		config.SchemaHandler, err = schemahandler.NewFileHandler(options.SchemasDir)
+		if err != nil {
+			return nil, fmt.Errorf("error creating file handler: %w", err)
+		}
+	case "grpc":
 
-	// Initialize schema resolver
-	// TODO: Move to context based logger.
-	log, err := logger.New(logger.DefaultConfig())
-	if err != nil {
-		return nil, fmt.Errorf("error creating logger: %w", err)
+		lis, err := net.Listen("tcp", options.GRPCListenAddr)
+		if err != nil {
+			return nil, fmt.Errorf("error creating gRPC listener: %w", err)
+		}
+
+		handler := schemahandler.NewGRPCHandler()
+
+		srv := grpc.NewServer()
+		sdk.RegisterSchemaHandlerServer(srv, handler)
+		reflection.Register(srv)
+
+		config.SchemaHandler = handler
+		config.grpcServer = srv
+
+		go func() {
+			if err := srv.Serve(lis); err != nil {
+				log.Error().Err(err).Msg("error serving gRPC")
+			}
+		}()
+
 	}
-	config.SchemaResolver = apischema.NewResolver(log)
 
 	return config, nil
 }

@@ -11,7 +11,7 @@ import (
 )
 
 type Server struct {
-	HTTPServer http.Server
+	HTTPServer *http.Server
 	Gateway    *gateway.Service
 }
 
@@ -27,20 +27,17 @@ func (s *Server) Run(ctx context.Context) error {
 	logger.Info("Starting Gateway Server")
 
 	wg := sync.WaitGroup{}
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		if err := s.Gateway.Run(ctx); err != nil {
 			logger.Error(err, "Gateway encountered an error")
 		}
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		if err := s.HTTPServer.Run(ctx); err != nil {
 			logger.Error(err, "HTTP server encountered an error")
 		}
-	}()
+	})
 
 	wg.Wait()
 	return nil

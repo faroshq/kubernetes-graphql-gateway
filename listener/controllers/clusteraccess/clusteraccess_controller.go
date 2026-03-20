@@ -1,33 +1,21 @@
-/*
-Copyright 2025 The Kube Bind Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package clusteraccess
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/platform-mesh/kubernetes-graphql-gateway/apis/v1alpha1"
 	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/apischema"
-	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/workspacefile"
+	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/apischema/enricher"
+	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/schemahandler"
 
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -43,6 +31,10 @@ import (
 
 const (
 	controllerName = "clusteraccess-schema-controller"
+
+	// ConditionTypeReady indicates whether the ClusterAccess schema was
+	// successfully generated and written.
+	ConditionTypeReady = "Ready"
 )
 
 var (
@@ -52,10 +44,9 @@ var (
 
 // ClusterAccessReconciler reconciles ClusterAccess resources and generates schemas
 type ClusterAccessReconciler struct {
-	manager        mcmanager.Manager
-	opts           controller.TypedOptions[mcreconcile.Request]
-	ioHandler      *workspacefile.FileHandler
-	schemaResolver apischema.Resolver
+	manager   mcmanager.Manager
+	opts      controller.TypedOptions[mcreconcile.Request]
+	ioHandler schemahandler.Handler
 }
 
 // NewClusterAccessReconciler returns a new ClusterAccessReconciler
@@ -63,14 +54,12 @@ func NewClusterAccessReconciler(
 	_ context.Context,
 	mgr mcmanager.Manager,
 	opts controller.TypedOptions[mcreconcile.Request],
-	ioHandler *workspacefile.FileHandler,
-	schemaResolver apischema.Resolver,
+	ioHandler schemahandler.Handler,
 ) (*ClusterAccessReconciler, error) {
 	r := &ClusterAccessReconciler{
-		manager:        mgr,
-		opts:           opts,
-		ioHandler:      ioHandler,
-		schemaResolver: schemaResolver,
+		manager:   mgr,
+		opts:      opts,
+		ioHandler: ioHandler,
 	}
 
 	return r, nil
@@ -99,7 +88,7 @@ func (r *ClusterAccessReconciler) Reconcile(ctx context.Context, req mcreconcile
 			if req.ClusterName != "" {
 				name = fmt.Sprintf("%s-%s", req.ClusterName, name)
 			}
-			if err := r.ioHandler.Delete(name); err != nil {
+			if err := r.ioHandler.Delete(ctx, name); err != nil {
 				logger.Error(err, "Failed to cleanup schema")
 			}
 			return ctrl.Result{}, nil
@@ -107,17 +96,37 @@ func (r *ClusterAccessReconciler) Reconcile(ctx context.Context, req mcreconcile
 		return ctrl.Result{}, fmt.Errorf("failed to get ClusterAccess: %w", err)
 	}
 
+	result, reconcileErr := r.reconcileClusterAccess(ctx, ca, c, cl.GetConfig(), req.ClusterName)
+
+	// Update the Ready status condition based on the reconciliation outcome
+	if err := r.setReadyCondition(ctx, ca, c, reconcileErr); err != nil {
+		logger.Error(err, "Failed to update status conditions", "clusterAccess", ca.Name)
+	}
+
+	return result, reconcileErr
+}
+
+// reconcileClusterAccess performs the core reconciliation: building the schema and writing it.
+func (r *ClusterAccessReconciler) reconcileClusterAccess(
+	ctx context.Context,
+	ca *v1alpha1.ClusterAccess,
+	c client.Client,
+	currentConfig *rest.Config,
+	reqClusterName string,
+) (ctrl.Result, error) {
+	logger := log.FromContext(ctx)
+
 	// Determine cluster name/path for the schema file
 	clusterName := ca.GetName()
 	if ca.Spec.Path != "" {
 		clusterName = ca.Spec.Path
 	}
-	if req.ClusterName != "" {
-		clusterName = fmt.Sprintf("%s-%s", req.ClusterName, clusterName)
+	if reqClusterName != "" {
+		clusterName = fmt.Sprintf("%s-%s", reqClusterName, clusterName)
 	}
 
 	// Build target cluster config from ClusterAccess spec
-	targetConfig, err := buildTargetClusterConfig(ctx, *ca, c)
+	targetConfig, err := buildTargetClusterConfig(ctx, *ca, c, currentConfig)
 	if err != nil {
 		logger.Error(err, "Failed to build target cluster config", "clusterAccess", ca.Name)
 		return ctrl.Result{}, err
@@ -137,28 +146,68 @@ func (r *ClusterAccessReconciler) Reconcile(ctx context.Context, req mcreconcile
 		return ctrl.Result{}, err
 	}
 
-	// Create schema resolver for target cluster and resolve schema
-	JSON, err := r.schemaResolver.Resolve(targetDiscovery, targetRM)
+	// Get preferred resources for categories enricher
+	apiResources, err := targetDiscovery.ServerPreferredResources()
+	if err != nil {
+		// Log but don't fail - some resources may still be available
+		logger.V(2).Info("partial error getting server preferred resources", "error", err)
+		if apiResources == nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get server preferred resources: %w", err)
+		}
+	}
+
+	// Create resolver with enrichers configured for this cluster
+	resolver := apischema.NewResolver(
+		enricher.NewScope(targetRM),
+		enricher.NewCategories(apiResources),
+	)
+
+	// Resolve schema from target cluster
+	schemaJSON, err := resolver.Resolve(ctx, targetDiscovery.OpenAPIV3())
 	if err != nil {
 		logger.Error(err, "Failed to resolve schema", "clusterAccess", ca.Name)
 		return ctrl.Result{}, err
 	}
 
 	// Inject cluster metadata into the schema
-	schemaWithMetadata, err := injectClusterMetadata(ctx, JSON, *ca)
+	schemaWithMetadata, err := injectClusterMetadata(ctx, schemaJSON, *ca, c, currentConfig)
 	if err != nil {
 		logger.Error(err, "Failed to inject cluster metadata", "clusterAccess", ca.Name)
 		return ctrl.Result{}, err
 	}
 
 	// Write schema to file
-	if err := r.ioHandler.Write(schemaWithMetadata, clusterName); err != nil {
+	if err := r.ioHandler.Write(ctx, schemaWithMetadata, clusterName); err != nil {
 		logger.Error(err, "Failed to write schema", "clusterAccess", ca.Name)
 		return ctrl.Result{}, err
 	}
 
 	logger.Info("Successfully reconciled schema for ClusterAccess", "name", ca.Name, "path", clusterName)
+
+	// If using SA auth, schedule requeue before token expires
+	if ca.Spec.Auth != nil && ca.Spec.Auth.ServiceAccountRef != nil {
+		requeueDuration := calculateTokenRefreshInterval(ca.Spec.Auth.ServiceAccountRef.TokenExpiration)
+		logger.Info("Scheduled token refresh", "name", ca.Name, "requeueAfter", requeueDuration)
+		return ctrl.Result{RequeueAfter: requeueDuration}, nil
+	}
+
 	return ctrl.Result{}, nil
+}
+
+// calculateTokenRefreshInterval returns when to requeue for token refresh.
+// Requeues at 80% of token lifetime to refresh before expiry.
+func calculateTokenRefreshInterval(tokenExpiration *metav1.Duration) time.Duration {
+	const defaultExpiration = 1 * time.Hour
+
+	var expiration time.Duration
+	if tokenExpiration != nil && tokenExpiration.Duration > 0 {
+		expiration = tokenExpiration.Duration
+	} else {
+		expiration = defaultExpiration
+	}
+
+	// Refresh at 80% of token lifetime (20% safety buffer)
+	return time.Duration(float64(expiration) * 0.8)
 }
 
 // SetupWithManager sets up the controller with the Manager
@@ -170,45 +219,47 @@ func (r *ClusterAccessReconciler) SetupWithManager(mgr mcmanager.Manager) error 
 		Complete(r)
 }
 
-// buildTargetClusterConfig extracts connection info from ClusterAccess and builds rest.Config
-func buildTargetClusterConfig(ctx context.Context, clusterAccess v1alpha1.ClusterAccess, k8sClient client.Client) (*rest.Config, error) {
+func buildTargetClusterConfig(ctx context.Context, clusterAccess v1alpha1.ClusterAccess, c client.Client, currentConfig *rest.Config) (*rest.Config, error) {
 	spec := clusterAccess.Spec
 
-	// Extract host (required)
 	host := spec.Host
 	if host == "" {
 		return nil, errors.New("host field not found in ClusterAccess spec")
 	}
 
-	config, err := v1alpha1.BuildRestConfigFromClusterAccess(clusterAccess)
+	config, err := v1alpha1.BuildRestConfigFromClusterAccess(ctx, clusterAccess, c)
 	if err != nil {
 		return nil, err
 	}
 
+	if len(config.CAData) == 0 && currentConfig != nil && len(currentConfig.CAData) > 0 {
+		config.CAData = currentConfig.CAData
+		config.Insecure = false
+	}
+
+	config.Host = host
+
 	return config, nil
 }
 
-// injectClusterMetadata injects cluster metadata into schema JSON
-// TODO: This is very unelegant, improve in future
-func injectClusterMetadata(ctx context.Context, schemaData []byte, clusterAccess v1alpha1.ClusterAccess) ([]byte, error) {
-	metadata, err := v1alpha1.BuildClusterMetadataFromClusterAccess(clusterAccess)
+func injectClusterMetadata(ctx context.Context, schemaData []byte, clusterAccess v1alpha1.ClusterAccess, c client.Client, currentConfig *rest.Config) ([]byte, error) {
+	metadata, err := v1alpha1.BuildClusterMetadataFromClusterAccess(ctx, clusterAccess, c)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build cluster metadata from ClusterAccess: %w", err)
 	}
 
-	// Parse the existing schema JSON
+	if metadata.CA == nil && currentConfig != nil && len(currentConfig.CAData) > 0 {
+		metadata.CA = &v1alpha1.CAMetadata{
+			Data: base64.StdEncoding.EncodeToString(currentConfig.CAData),
+		}
+	}
+
 	var schemaJSON map[string]any
 	if err := json.Unmarshal(schemaData, &schemaJSON); err != nil {
 		return nil, fmt.Errorf("failed to parse schema JSON: %w", err)
 	}
 
-	data, err := json.Marshal(metadata)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal cluster metadata: %w", err)
-	}
-
-	// Inject the metadata into the schema
-	schemaJSON["x-cluster-metadata"] = data
+	schemaJSON["x-cluster-metadata"] = metadata
 
 	return json.Marshal(schemaJSON)
 }
@@ -225,4 +276,29 @@ func (r *ClusterAccessReconciler) restMapperFromConfig(cfg *rest.Config) (meta.R
 	}
 
 	return rm, nil
+}
+
+// setReadyCondition updates the Ready status condition on the ClusterAccess resource.
+// On success (reconcileErr == nil) it sets Ready=True; on failure it sets Ready=False
+// with the error message. This is best-effort: failures to update are returned but
+// should not override the original reconciliation error.
+func (r *ClusterAccessReconciler) setReadyCondition(ctx context.Context, ca *v1alpha1.ClusterAccess, c client.Client, reconcileErr error) error {
+	condition := metav1.Condition{
+		Type:               ConditionTypeReady,
+		ObservedGeneration: ca.Generation,
+	}
+
+	if reconcileErr == nil {
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = "ReconcileSucceeded"
+		condition.Message = "Schema generated and written successfully"
+	} else {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = "ReconcileFailed"
+		condition.Message = reconcileErr.Error()
+	}
+
+	meta.SetStatusCondition(&ca.Status.Conditions, condition)
+
+	return c.Status().Update(ctx, ca)
 }

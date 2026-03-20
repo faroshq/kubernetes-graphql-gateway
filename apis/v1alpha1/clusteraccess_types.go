@@ -40,26 +40,29 @@ type ClusterAccessSpec struct {
 type CAConfig struct {
 	// SecretRef points to a secret containing CA data
 	// +optional
-	SecretRef *SercetKeyRef `json:"secretRef,omitempty"`
+	SecretRef *SecretKeyRef `json:"secretRef,omitempty"`
 }
 
 // AuthConfig defines authentication configuration options
-// +kubebuilder:validation:XValidation:rule="(has(self.tokenSecretRef) ? 1 : 0) + (has(self.kubeconfigSecretRef) ? 1 : 0) + (has(self.clientCertificateRef) ? 1 : 0) <= 1",message="only one of tokenSecretRef, kubeconfigSecretRef, or clientCertificateRef can be set"
+// +kubebuilder:validation:XValidation:rule="(has(self.tokenSecretRef) ? 1 : 0) + (has(self.kubeconfigSecretRef) ? 1 : 0) + (has(self.clientCertificateRef) ? 1 : 0) + (has(self.serviceAccountRef) ? 1 : 0) <= 1",message="only one of tokenSecretRef, kubeconfigSecretRef, clientCertificateRef, or serviceAccountRef can be set"
 type AuthConfig struct {
 	// SecretRef points to a secret containing auth token
 	// +optional
-	TokenSecretRef *SercetKeyRef `json:"tokenSecretRef,omitempty"`
+	TokenSecretRef *SecretKeyRef `json:"tokenSecretRef,omitempty"`
 	// KubeconfigSecretRef points to a secret containing kubeconfig
 	// +optional
-	KubeconfigSecretRef *SercetKeyRef `json:"kubeconfigSecretRef,omitempty"`
+	KubeconfigSecretRef *SecretKeyRef `json:"kubeconfigSecretRef,omitempty"`
 	// ClientCertificateRef points to secrets containing client certificate and key for mTLS
 	// Secret must contain tls.crt and tls.key keys.
 	// +optional
 	ClientCertificateRef *corev1.SecretReference `json:"clientCertificateRef,omitempty"`
+	// ServiceAccountRef points to a service account for token generation
+	// +optional
+	ServiceAccountRef *ServiceAccountRef `json:"serviceAccountRef,omitempty"`
 }
 
-// SercetKeyRef defines a reference to a secret with a specific key.
-type SercetKeyRef struct {
+// SecretKeyRef defines a reference to a secret with a specific key.
+type SecretKeyRef struct {
 	corev1.SecretReference `json:",inline"`
 	// Key is the key in the secret data which contains the token
 	// +optional
@@ -75,27 +78,16 @@ type ClusterAccessStatus struct {
 
 // ServiceAccountRef defines a reference to a service account.
 type ServiceAccountRef struct {
-	Name      string `json:"name,omitempty"`
-	Namespace string `json:"namespace,omitempty"`
+	Name            string           `json:"name"`
+	Namespace       string           `json:"namespace"`
+	Audience        []string         `json:"audience,omitempty"`
+	TokenExpiration *metav1.Duration `json:"token_expiration,omitempty"`
 }
 
-//+kubebuilder:object:root=true
-
 // ClusterAccessList contains a list of ClusterAccess
+// +kubebuilder:object:root=true
 type ClusterAccessList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []ClusterAccess `json:"items"`
-}
-
-// GetConditions returns the conditions from the ClusterAccess status
-// This method implements the RuntimeObjectConditions interface
-func (ca *ClusterAccess) GetConditions() []metav1.Condition {
-	return ca.Status.Conditions
-}
-
-// SetConditions sets the conditions in the ClusterAccess status
-// This method implements the RuntimeObjectConditions interface
-func (ca *ClusterAccess) SetConditions(conditions []metav1.Condition) {
-	ca.Status.Conditions = conditions
 }
