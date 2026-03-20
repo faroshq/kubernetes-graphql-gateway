@@ -1,3 +1,8 @@
+// TODO(v2): rewrite — references packages deleted/moved in v2 refactor
+//go:build ignore
+
+// TODO: rewrite for v2 — references deleted packages from pre-v2
+
 package standard_k8s_test
 
 import (

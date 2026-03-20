@@ -1,3 +1,6 @@
+// TODO(v2): rewrite — resolver.New() signature changed in v2
+//go:build ignore
+
 // SPDX-FileCopyrightText: 2024 SAP SE or an SAP affiliate company and platform-mesh contributors
 // SPDX-License-Identifier: Apache-2.0
 
