@@ -28,8 +28,8 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if eq .Values.schemaHandler "file" }}
       volumes:
+        {{- if eq .Values.schemaHandler "file" }}
         - name: schemas
           {{- if .Values.schemas.existingClaim }}
           persistentVolumeClaim:
@@ -38,7 +38,12 @@ spec:
           emptyDir:
             sizeLimit: {{ .Values.schemas.sizeLimit }}
           {{- end }}
-      {{- end }}
+        {{- end }}
+        {{- if .Values.listener.kubeconfigSecret }}
+        - name: listener-kubeconfig
+          secret:
+            secretName: {{ tpl .Values.listener.kubeconfigSecret . }}
+        {{- end }}
       containers:
         - name: listener
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -59,17 +64,25 @@ spec:
             {{- range .Values.listener.extraArgs }}
             - {{ . | quote }}
             {{- end }}
+            {{- if .Values.listener.kubeconfigSecret }}
+            - "--kubeconfig=/etc/listener/kubeconfig/{{ .Values.listener.kubeconfigSecretKey }}"
+            {{- end }}
           {{- if eq .Values.schemaHandler "grpc" }}
           ports:
             - name: grpc
               containerPort: 50051
               protocol: TCP
           {{- end }}
-          {{- if eq .Values.schemaHandler "file" }}
           volumeMounts:
+            {{- if eq .Values.schemaHandler "file" }}
             - name: schemas
               mountPath: {{ .Values.listener.schemasDir }}
-          {{- end }}
+            {{- end }}
+            {{- if .Values.listener.kubeconfigSecret }}
+            - name: listener-kubeconfig
+              mountPath: /etc/listener/kubeconfig
+              readOnly: true
+            {{- end }}
           {{- with .Values.listener.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
