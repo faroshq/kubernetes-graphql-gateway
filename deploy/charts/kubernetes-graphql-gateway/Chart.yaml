@@ -1,0 +1,11 @@
+apiVersion: v2
+name: kubernetes-graphql-gateway
+description: Kubernetes GraphQL Gateway — exposes Kubernetes APIs as a GraphQL endpoint
+type: application
+version: v0.0.1
+appVersion: "v0.0.1"
+home: https://github.com/faroshq/kubernetes-graphql-gateway
+sources:
+  - https://github.com/faroshq/kubernetes-graphql-gateway
+maintainers:
+  - name: Faros Authors
