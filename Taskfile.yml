@@ -38,10 +38,23 @@ tasks:
 
   ## Code Generation
   generate:
-    desc: "Generate all CRD-related files (manifests + deepcopy methods)"
+    desc: "Generate CRD manifests and deepcopy methods, then sync CRDs into Helm chart"
     deps: [setup:controller-gen]
     cmds:
       - "{{.LOCAL_BIN}}/controller-gen object crd:crdVersions=v1 paths=./apis/... output:crd:artifacts:config=config/crd"
+      - task: chart:update-crds
+
+  generate:kcp:
+    desc: "Generate kcp APIExport and APIResourceSchema manifests from CRDs (kcp deployments only)"
+    deps: [generate, setup:kcp-apigen]
+    cmds:
+      - "{{.LOCAL_BIN}}/apigen --output-dir config/kcp --input-dir config/crd"
+
+  chart:update-crds:
+    desc: "Copy generated CRDs from config/crd/ into the Helm chart crds/ directory"
+    cmds:
+      - mkdir -p deploy/charts/kubernetes-graphql-gateway/crds
+      - cp config/crd/*.yaml deploy/charts/kubernetes-graphql-gateway/crds/
 
   ## Development
   mockery:
