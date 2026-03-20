@@ -28,12 +28,16 @@ type ExtraOptions struct {
 	Provider string
 	// SchemasDir is the directory to store schema files. Only required if using file schema handler
 	SchemasDir string
-	// AnchorNamespace is the namespace to watch for kubernetes provider
-	// When a namespace with this name exists, the controller will generate schema for the cluster
-	AnchorNamespace string
+	// ResourceGVR is the GroupVersionResource which the reconciler will be watching
+	ResourceGVR string
+	// AnchorResource is the resource to watch for kubernetes provider
+	// When a resource with this name exists, the controller will generate schema for the cluster
+	AnchorResource string
 	// ClusterMetadataFunc allows to provide cluster metadata for a given cluster name
 	// when reconciling anchor namespaces.
 	ClusterMetadataFunc v1alpha1.ClusterMetadataFunc
+	// ClusterURLResolverFunc allows to provide cluster URL for a given cluster name
+	ClusterURLResolverFunc v1alpha1.ClusterURLResolver
 	// EnableHTTP2 indicates whether to enable HTTP/2 for controller-manager server
 	EnableHTTP2 bool
 	// MetricsBindAddress is the bind address for metrics server
@@ -79,7 +83,7 @@ func NewOptions() *Options {
 			SchemaHandler:          "file",
 			SchemasDir:             "_output/schemas",
 			GRPCListenAddr:         ":50051",
-			AnchorResource:         "default",
+			AnchorResource:         "object.metadata.name == 'default'",
 			ResourceGVR:            "namespaces.v1",
 			MetricsBindAddress:     "0",
 			EnableHTTP2:            false,
@@ -110,7 +114,8 @@ func (options *Options) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&options.SchemasDir, "schemas-dir", options.SchemasDir, "SchemasDir is the directory to store schema files. Only required if using file schema handler")
 	fs.StringVar(&options.GRPCListenAddr, "grpc-listen-addr", options.GRPCListenAddr, "The gRPC server listener address (only used if SchemaHandler is 'grpc')")
 
-	fs.StringVar(&options.AnchorNamespace, "anchor-namespace", options.AnchorNamespace, "Namespace to watch as anchor for kubernetes provider (default: kube-system)")
+	fs.StringVar(&options.AnchorResource, "anchor-resource", options.AnchorResource, "Resource to watch as anchor for kubernetes provider (default: default)")
+	fs.StringVar(&options.ResourceGVR, "reconciler-gvr", options.ResourceGVR, "The GroupVersionResource which the reconciler will be watching (default: namespaces.v1)")
 
 	fs.StringVar(&options.AdditonalPathAnnotationKey, "additional-path-annotation-key", options.AdditonalPathAnnotationKey, "additional path annotation key for workspace schema generation")
 

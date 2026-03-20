@@ -36,7 +36,7 @@ func NewServer(ctx context.Context, c *Config) (*Server, error) {
 
 	opts := controller.TypedOptions[mcreconcile.Request]{}
 	var err error
-	s.Namespaces, err = namespaces.NewNamespaceReconciler(
+	s.Resource, err = resource.New(
 		ctx,
 		s.Config.Manager,
 		opts,
@@ -45,11 +45,12 @@ func NewServer(ctx context.Context, c *Config) (*Server, error) {
 		c.Options.ResourceGVR,
 		c.Options.AdditonalPathAnnotationKey,
 		c.Options.ClusterMetadataFunc,
+		c.Options.ClusterURLResolverFunc,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error setting up Namespace Controller: %w", err)
 	}
-	if err := s.Namespaces.SetupWithManager(s.Config.Manager); err != nil {
+	if err := s.Resource.SetupWithManager(s.Config.Manager); err != nil {
 		return nil, fmt.Errorf("error setting up Namespace controller with manager: %w", err)
 	}
 

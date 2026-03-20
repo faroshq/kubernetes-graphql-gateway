@@ -23,7 +23,6 @@ const (
 	ResourceVersionArg = "resourceVersion"
 	LimitArg           = "limit"
 	ContinueArg        = "continue"
-	YamlArg            = "yaml"
 )
 
 var (

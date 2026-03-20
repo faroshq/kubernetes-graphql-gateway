@@ -78,11 +78,11 @@ type ClusterAccessStatus struct {
 
 // ServiceAccountRef defines a reference to a service account.
 type ServiceAccountRef struct {
-	Name      string `json:"name,omitempty"`
-	Namespace string `json:"namespace,omitempty"`
+	Name            string           `json:"name"`
+	Namespace       string           `json:"namespace"`
+	Audience        []string         `json:"audience,omitempty"`
+	TokenExpiration *metav1.Duration `json:"token_expiration,omitempty"`
 }
-
-//+kubebuilder:object:root=true
 
 // ClusterAccessList contains a list of ClusterAccess
 // +kubebuilder:object:root=true
@@ -90,16 +90,4 @@ type ClusterAccessList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []ClusterAccess `json:"items"`
-}
-
-// GetConditions returns the conditions from the ClusterAccess status
-// This method implements the RuntimeObjectConditions interface
-func (ca *ClusterAccess) GetConditions() []metav1.Condition {
-	return ca.Status.Conditions
-}
-
-// SetConditions sets the conditions in the ClusterAccess status
-// This method implements the RuntimeObjectConditions interface
-func (ca *ClusterAccess) SetConditions(conditions []metav1.Condition) {
-	ca.Status.Conditions = conditions
 }

@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/platform-mesh/golang-commons/logger"
 	gatewayv1alpha1 "github.com/platform-mesh/kubernetes-graphql-gateway/apis/v1alpha1"
 	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/options"
 	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/schemahandler"
-	"github.com/platform-mesh/kubernetes-graphql-gateway/listener/pkg/workspacefile"
 	kcpprovider "github.com/platform-mesh/kubernetes-graphql-gateway/providers/kcp"
 	"github.com/platform-mesh/kubernetes-graphql-gateway/sdk"
 	"github.com/rs/zerolog/log"
@@ -18,6 +16,7 @@ import (
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -128,12 +127,12 @@ func NewConfig(options *options.CompletedOptions) (*Config, error) {
 		config.Provider = nil
 	}
 
-	disableHTTP2 := func(c *tls.Config) {
-		log.Info().Msg("disabling http/2")
-		c.NextProtos = []string{"http/1.1"}
-	}
 	var tlsOpts []func(*tls.Config)
 	if !options.EnableHTTP2 {
+		disableHTTP2 := func(c *tls.Config) {
+			log.Info().Msg("disabling http/2")
+			c.NextProtos = []string{"http/1.1"}
+		}
 		tlsOpts = []func(c *tls.Config){disableHTTP2}
 	}
 
@@ -160,9 +159,9 @@ func NewConfig(options *options.CompletedOptions) (*Config, error) {
 
 	switch options.SchemaHandler {
 	case "file":
-		config.SchemaHandler, err = workspacefile.NewIOHandler(options.SchemasDir)
+		config.SchemaHandler, err = schemahandler.NewFileHandler(options.SchemasDir)
 		if err != nil {
-			return nil, fmt.Errorf("error creating IO handler: %w", err)
+			return nil, fmt.Errorf("error creating file handler: %w", err)
 		}
 	case "grpc":
 
@@ -171,7 +170,7 @@ func NewConfig(options *options.CompletedOptions) (*Config, error) {
 			return nil, fmt.Errorf("error creating gRPC listener: %w", err)
 		}
 
-		handler := schemahandler.New()
+		handler := schemahandler.NewGRPCHandler()
 
 		srv := grpc.NewServer()
 		sdk.RegisterSchemaHandlerServer(srv, handler)
