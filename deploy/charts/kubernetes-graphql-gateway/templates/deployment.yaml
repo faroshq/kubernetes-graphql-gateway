@@ -28,8 +28,9 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if eq .Values.schemaHandler "file" }}
+      {{- if or (eq .Values.schemaHandler "file") .Values.listener.kubeconfigSecret }}
       volumes:
+        {{- if eq .Values.schemaHandler "file" }}
         - name: schemas
           {{- if .Values.schemas.existingClaim }}
           persistentVolumeClaim:
@@ -38,6 +39,12 @@ spec:
           emptyDir:
             sizeLimit: {{ .Values.schemas.sizeLimit }}
           {{- end }}
+        {{- end }}
+        {{- if .Values.listener.kubeconfigSecret }}
+        - name: listener-kubeconfig
+          secret:
+            secretName: {{ .Values.listener.kubeconfigSecret }}
+        {{- end }}
       {{- end }}
       containers:
         - name: listener
@@ -56,6 +63,9 @@ spec:
             {{- else }}
             - "--schemas-dir={{ .Values.listener.schemasDir }}"
             {{- end }}
+            {{- if .Values.listener.kubeconfigSecret }}
+            - "--kubeconfig=/etc/kubeconfig/{{ .Values.listener.kubeconfigSecretKey }}"
+            {{- end }}
             {{- range .Values.listener.extraArgs }}
             - {{ . | quote }}
             {{- end }}
@@ -65,10 +75,17 @@ spec:
               containerPort: 50051
               protocol: TCP
           {{- end }}
-          {{- if eq .Values.schemaHandler "file" }}
+          {{- if or (eq .Values.schemaHandler "file") .Values.listener.kubeconfigSecret }}
           volumeMounts:
+            {{- if eq .Values.schemaHandler "file" }}
             - name: schemas
               mountPath: {{ .Values.listener.schemasDir }}
+            {{- end }}
+            {{- if .Values.listener.kubeconfigSecret }}
+            - name: listener-kubeconfig
+              mountPath: /etc/kubeconfig
+              readOnly: true
+            {{- end }}
           {{- end }}
           {{- with .Values.listener.resources }}
           resources:

@@ -35,6 +35,10 @@ listener:
   schemasDir: /schemas
   # Enable the ClusterAccess controller for additional remote clusters
   enableClusterAccessController: false
+  # Optional: name of a Secret containing a kubeconfig (used with provider=kcp or remote clusters)
+  # The secret must have a key matching kubeconfigSecretKey
+  kubeconfigSecret: ""
+  kubeconfigSecretKey: "kubeconfig"
   extraArgs: []
   resources: {}
 
