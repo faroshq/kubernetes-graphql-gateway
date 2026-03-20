@@ -1,0 +1,80 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/faroshq/kubernetes-graphql-gateway
+  tag: ""        # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+rbac:
+  create: true
+
+# Communication mode between listener and gateway: "grpc" (default) or "file"
+# grpc: no shared volume needed; listener binds :50051, gateway connects to localhost:50051
+# file: listener and gateway share an emptyDir (or existingClaim)
+schemaHandler: grpc
+
+listener:
+  # Multicluster provider: "kubernetes" (default) or "kcp"
+  provider: kubernetes
+  # Kubernetes resource to watch as anchor (default namespace name)
+  anchorResource: default
+  # GroupVersionResource for the reconciler
+  reconcilerGVR: "namespaces.v1"
+  # gRPC listen address (only used when schemaHandler=grpc)
+  grpcListenAddr: ":50051"
+  # schemas dir (only used when schemaHandler=file)
+  schemasDir: /schemas
+  # Enable the ClusterAccess controller for additional remote clusters
+  enableClusterAccessController: false
+  extraArgs: []
+  resources: {}
+
+gateway:
+  port: 8080
+  playground: false
+  urlSuffix: /graphql
+  corsAllowedOrigins: []
+  corsAllowedHeaders: []
+  # gRPC listener address to connect to (only used when schemaHandler=grpc)
+  # For sidecar mode this is always localhost:50051
+  grpcListenerAddress: "localhost:50051"
+  # schemas dir (only used when schemaHandler=file)
+  schemasDir: /schemas
+  extraArgs: []
+  resources: {}
+
+# Shared schemas volume — only used when schemaHandler=file
+schemas:
+  existingClaim: ""
+  sizeLimit: 256Mi
+
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: graphql-gateway.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+podAnnotations: {}
+podSecurityContext: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

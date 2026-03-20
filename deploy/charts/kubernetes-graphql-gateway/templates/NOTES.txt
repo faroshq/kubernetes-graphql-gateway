@@ -1,0 +1,8 @@
+Kubernetes GraphQL Gateway deployed!
+
+Schema handler: {{ .Values.schemaHandler }}
+GraphQL endpoint: {{ include "kubernetes-graphql-gateway.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}{{ .Values.gateway.urlSuffix }}
+
+Port-forward for local access:
+  kubectl port-forward svc/{{ include "kubernetes-graphql-gateway.fullname" . }} 8080:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+  open http://localhost:8080{{ .Values.gateway.urlSuffix }}
