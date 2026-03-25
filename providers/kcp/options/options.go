@@ -21,12 +21,20 @@ type Options struct {
 type ExtraOptions struct {
 	// APIExportEndpointSliceName is the name of the APIExport EndpointSlice to watch.
 	APIExportEndpointSliceName string
+	// APIExportEndpointSliceLogicalCluster is the logical cluster path where the
+	// APIExportEndpointSlice lives, e.g. "root:kedge:providers". When set, the
+	// listener rest config host is rewritten to point to that logical cluster so
+	// the endpointslice is fetched from the correct workspace regardless of what
+	// the kubeconfig's current context points to.
+	APIExportEndpointSliceLogicalCluster string
 	// WorkspaceSchemaHostOverride is the host override for workspace schema generation.
 	WorkspaceSchemaHostOverride string
-	// workspaceSchemaKubeconfigOverride is the kubeconfig override for workspace schema generation.
+	// WorkspaceSchemaKubeconfigOverride is the kubeconfig override for workspace schema generation.
 	// If set together with WorkspaceSchemaHostOverride, WorkspaceSchemaHostOverride will take precedence.
-	workspaceSchemaKubeconfigOverride string
-	// WorkspaceSchemaKubeconfigRestConfig is the rest config built from workspaceSchemaKubeconfigOverride
+	// When set, CA and auth are extracted from the kubeconfig and embedded in the schema metadata
+	// so the gateway can proxy API calls with the correct credentials.
+	WorkspaceSchemaKubeconfigOverride string
+	// WorkspaceSchemaKubeconfigRestConfig is the rest config built from WorkspaceSchemaKubeconfigOverride
 	WorkspaceSchemaKubeconfigRestConfig *rest.Config
 }
 
@@ -48,14 +56,15 @@ func NewOptions() *Options {
 
 func (options *Options) AddFlags(fs *pflag.FlagSet) {
 	fs.StringVar(&options.APIExportEndpointSliceName, "apiexport-endpoint-slice-name", options.APIExportEndpointSliceName, "name of the APIExport EndpointSlice to watch")
+	fs.StringVar(&options.APIExportEndpointSliceLogicalCluster, "apiexport-endpoint-slice-logicalcluster", options.APIExportEndpointSliceLogicalCluster, "logical cluster path where the APIExportEndpointSlice lives, e.g. root:kedge:providers (overrides the kubeconfig current context workspace)")
 	fs.StringVar(&options.WorkspaceSchemaHostOverride, "workspace-schema-host-override", options.WorkspaceSchemaHostOverride, "host override for workspace schema generation")
-	fs.StringVar(&options.workspaceSchemaKubeconfigOverride, "workspace-schema-kubeconfig-override", options.workspaceSchemaKubeconfigOverride, "kubeconfig override for workspace schema generation. If set together with --workspace-schema-host-override, the host override will take precedence.")
+	fs.StringVar(&options.WorkspaceSchemaKubeconfigOverride, "workspace-schema-kubeconfig-override", options.WorkspaceSchemaKubeconfigOverride, "kubeconfig override for workspace schema generation. If set together with --workspace-schema-host-override, the host override will take precedence.")
 }
 
 func (options *Options) Complete() (*CompletedOptions, error) {
-	if options.workspaceSchemaKubeconfigOverride != "" {
+	if options.WorkspaceSchemaKubeconfigOverride != "" {
 		// Load the kubeconfig and build rest config
-		config, err := clientcmd.BuildConfigFromFlags("", options.workspaceSchemaKubeconfigOverride)
+		config, err := clientcmd.BuildConfigFromFlags("", options.WorkspaceSchemaKubeconfigOverride)
 		if err != nil {
 			return nil, fmt.Errorf("failed to build rest config from kubeconfig: %w", err)
 		}
@@ -71,17 +80,34 @@ func (options *Options) Complete() (*CompletedOptions, error) {
 }
 
 func (options *CompletedOptions) Validate() error {
-	if options.workspaceSchemaKubeconfigOverride != "" {
+	if options.WorkspaceSchemaKubeconfigOverride != "" {
 		// Check if kubeconfig file exists
-		if _, err := os.Stat(options.workspaceSchemaKubeconfigOverride); err != nil {
+		if _, err := os.Stat(options.WorkspaceSchemaKubeconfigOverride); err != nil {
 			if os.IsNotExist(err) {
-				return fmt.Errorf("kubeconfig file does not exist: %s", options.workspaceSchemaKubeconfigOverride)
+				return fmt.Errorf("kubeconfig file does not exist: %s", options.WorkspaceSchemaKubeconfigOverride)
 			}
 			return fmt.Errorf("failed to access kubeconfig file: %w", err)
 		}
 	}
 
 	return nil
+}
+
+// ApplyLogicalClusterToConfig rewrites cfg.Host to point to the configured
+// logical cluster path. If APIExportEndpointSliceLogicalCluster is empty the
+// config is returned unchanged.
+func (options *CompletedOptions) ApplyLogicalClusterToConfig(cfg *rest.Config) (*rest.Config, error) {
+	if options.APIExportEndpointSliceLogicalCluster == "" {
+		return cfg, nil
+	}
+	parsed, err := url.Parse(cfg.Host)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse rest config host %q: %w", cfg.Host, err)
+	}
+	parsed.Path = path.Join("clusters", options.APIExportEndpointSliceLogicalCluster)
+	out := rest.CopyConfig(cfg)
+	out.Host = parsed.String()
+	return out, nil
 }
 
 func (options *CompletedOptions) GetClusterMetadataOverrideFunc() v1alpha1.ClusterMetadataFunc {

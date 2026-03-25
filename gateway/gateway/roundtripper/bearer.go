@@ -32,7 +32,7 @@ func (h *BearerHandler) RoundTrip(req *http.Request) (*http.Response, error, boo
 
 	token, ok := utilscontext.GetTokenFromCtx(ctx)
 	if !ok || token == "" {
-		logger.V(4).WithValues("path", req.URL.Path).Error(nil, "No token found for resource request, denying")
+		logger.WithValues("path", req.URL.Path).Error(nil, "No token found for resource request, denying")
 		resp, err := h.unauthorizedRT.RoundTrip(req)
 		return resp, err, true
 	}
