@@ -114,7 +114,12 @@ func NewConfig(options *options.CompletedOptions) (*Config, error) {
 			return nil, fmt.Errorf("error adding tenancy scheme: %w", err)
 		}
 
-		provider, err := kcpprovider.New(config.ClientConfig, options.ProviderKcp.APIExportEndpointSliceName, apiexport.Options{
+		providerCfg, err := options.ProviderKcp.ApplyLogicalClusterToConfig(config.ClientConfig)
+		if err != nil {
+			return nil, fmt.Errorf("error applying logical cluster to provider config: %w", err)
+		}
+
+		provider, err := kcpprovider.New(providerCfg, options.ProviderKcp.APIExportEndpointSliceName, apiexport.Options{
 			Scheme: scheme,
 		})
 		if err != nil {

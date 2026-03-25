@@ -64,7 +64,7 @@ func NewOptions() *Options {
 			SchemaHandler:       "file",
 			GRPCListenerAddress: "localhost:50051",
 			ServerBindAddress:   "0.0.0.0",
-			ServerBindPort:      8080,
+			ServerBindPort:      9090,
 			PlaygroundEnabled:   false,
 			CORSAllowedOrigins:  []string{},
 			CORSAllowedHeaders:  []string{},
