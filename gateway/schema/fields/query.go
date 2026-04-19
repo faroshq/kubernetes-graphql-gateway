@@ -22,7 +22,14 @@ func (g *QueryGenerator) Generate(rc *ResourceContext, target *graphql.Object) {
 		Fields: resolver.ListResultFields(rc.ResourceType),
 	})
 
-	target.AddFieldConfig(rc.PluralName, &graphql.Field{
+	// When PluralName == SingularName (e.g. "Kubernetes"), append "List" to
+	// the list field name to avoid overwriting it with the get field.
+	listFieldName := rc.PluralName
+	if listFieldName == rc.SingularName {
+		listFieldName = rc.SingularName + "List"
+	}
+
+	target.AddFieldConfig(listFieldName, &graphql.Field{
 		Type:    graphql.NewNonNull(listWrapperType),
 		Args:    listArgs,
 		Resolve: g.resolver.ListItems(rc.GVK, rc.Scope),
