@@ -35,7 +35,11 @@ func (g *SubscriptionGenerator) Generate(rc *ResourceContext, target *graphql.Ob
 	})
 
 	singularName := g.buildSubscriptionName(rc, rc.SingularName)
-	pluralName := g.buildSubscriptionName(rc, rc.PluralName)
+	listName := rc.PluralName
+	if listName == rc.SingularName {
+		listName = rc.SingularName + "List"
+	}
+	pluralName := g.buildSubscriptionName(rc, listName)
 
 	target.AddFieldConfig(singularName, &graphql.Field{
 		Type:        eventType,
